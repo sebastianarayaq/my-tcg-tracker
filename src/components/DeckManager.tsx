@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import axios from "axios";
 import { getDecks, createDeck, deleteDeck, updateDeck } from "../services/deckService";
+import CreateDeckModal from "./CreateDeckModal"; // ✅ Importar el modal de creación
 
 interface Deck {
   id: string;
@@ -15,41 +17,82 @@ interface DeckManagerProps {
 
 const DeckManager: React.FC<DeckManagerProps> = ({ profileId, onBack }) => {
   const [decks, setDecks] = useState<Deck[]>([]);
-  const [showModal, setShowModal] = useState(false);
+  const [loadingDecks, setLoadingDecks] = useState(true); // 🔹 Estado de carga de la tabla
   const [showViewModal, setShowViewModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null);
-  const [newName, setNewName] = useState("");
-  const [newFormat, setNewFormat] = useState("Standard");
-  const [newCardList, setNewCardList] = useState("");
+  const [cardImages, setCardImages] = useState<string[]>([]);
+  const [loadingImages, setLoadingImages] = useState(false);
 
   useEffect(() => {
     const fetchDecks = async () => {
+      setLoadingDecks(true); // Activar skeleton
       const data = await getDecks(profileId);
       setDecks(data);
+      setLoadingDecks(false); // Desactivar skeleton cuando se carguen los datos
     };
     fetchDecks();
   }, [profileId]);
-
-  const handleCreate = async () => {
-    if (!newName || !newCardList) return;
-
-    await createDeck(profileId, newName, newFormat, newCardList);
-    const updatedDecks = await getDecks(profileId);
-    setDecks(updatedDecks);
-
-    setShowModal(false);
-    setNewName("");
-    setNewCardList("");
-  };
 
   const handleDelete = async (id: string) => {
     await deleteDeck(profileId, id);
     setDecks(decks.filter((d) => d.id !== id));
   };
 
-  const handleViewDeck = (deck: Deck) => {
+  const handleCreateDeck = async (name: string, format: string, cardList: string) => {
+    await createDeck(profileId, name, format, cardList);
+    const updatedDecks = await getDecks(profileId);
+    setDecks(updatedDecks);
+    setShowCreateModal(false);
+  };
+
+  const handleViewDeck = async (deck: Deck) => {
     setSelectedDeck(deck);
     setShowViewModal(true);
+    setLoadingImages(true);
+
+    const cardEntries = deck.cardList
+      .split("\n")
+      .map((line) => {
+        const parts = line.trim().split(" ");
+        if (parts.length < 3) return null;
+        const name = parts.slice(1, -2).join(" ");
+        const setCode = parts.slice(-2, -1)[0]?.toLowerCase();
+        const number = parts.slice(-1)[0];
+        return { name, setCode, number };
+      })
+      .filter((entry): entry is { name: string; setCode: string; number: string } => entry !== null);
+
+    const setIds: Record<string, string> = {};
+    await Promise.all(
+      [...new Set(cardEntries.map((entry) => entry.setCode))].map(async (setCode) => {
+        try {
+          const { data } = await axios.get(`https://api.pokemontcg.io/v2/sets?q=ptcgoCode:${setCode}`);
+          if (data.data.length > 0) {
+            setIds[setCode] = data.data[0].id;
+          }
+        } catch (error) {
+          console.error(`Error obteniendo set ID para ${setCode}:`, error);
+        }
+      })
+    );
+
+    const fetchedImages = await Promise.all(
+      cardEntries.map(async ({ setCode, number }) => {
+        if (!setIds[setCode]) return "";
+
+        try {
+          const { data } = await axios.get(`https://api.pokemontcg.io/v2/cards?q=id:${setIds[setCode]}-${number}`);
+          return data.data?.[0]?.images?.small || "";
+        } catch (error) {
+          console.error(`Error obteniendo imagen para ${setIds[setCode]}-${number}:`, error);
+          return "";
+        }
+      })
+    );
+
+    setCardImages(fetchedImages.filter((img) => img));
+    setLoadingImages(false);
   };
 
   const handleUpdateDeck = async (deck: Deck) => {
@@ -58,7 +101,6 @@ const DeckManager: React.FC<DeckManagerProps> = ({ profileId, onBack }) => {
     await updateDeck(profileId, deck.id, { cardList: deck.cardList });
     const updatedDecks = await getDecks(profileId);
     setDecks(updatedDecks);
-
     setShowViewModal(false);
   };
 
@@ -72,15 +114,11 @@ const DeckManager: React.FC<DeckManagerProps> = ({ profileId, onBack }) => {
             🔙 Volver al Perfil
           </button>
 
-          <button
-            className="px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-700 transition"
-            onClick={() => setShowModal(true)}
-          >
+          <button className="px-6 py-3 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-700 transition" onClick={() => setShowCreateModal(true)}>
             ➕ Agregar Mazo
           </button>
         </div>
 
-        {/* Tabla de mazos */}
         <table className="w-full border-collapse border border-gray-300">
           <thead>
             <tr className="bg-gray-200">
@@ -90,106 +128,40 @@ const DeckManager: React.FC<DeckManagerProps> = ({ profileId, onBack }) => {
             </tr>
           </thead>
           <tbody>
-            {decks.length > 0 ? (
-              decks.map((deck) => (
-                <tr key={deck.id} className="hover:bg-gray-100">
-                  <td className="border border-gray-300 px-4 py-2">{deck.name}</td>
-                  <td className="border border-gray-300 px-4 py-2">{deck.format}</td>
-                  <td className="border border-gray-300 px-4 py-2 flex justify-center space-x-2">
-                    <button
-                      className="px-3 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-700 transition"
-                      onClick={() => handleViewDeck(deck)}
-                    >
-                      👀 Ver
-                    </button>
-                    <button
-                      className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-700 transition"
-                      onClick={() => handleDelete(deck.id)}
-                    >
-                      🗑️ Eliminar
-                    </button>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={3} className="border border-gray-300 px-4 py-2 text-gray-500 text-center">
-                  No hay mazos registrados.
-                </td>
-              </tr>
-            )}
+            {loadingDecks
+              ? [...Array(4)].map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="border border-gray-300 px-4 py-2">
+                      <div className="w-24 h-4 bg-gray-300 rounded"></div>
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2">
+                      <div className="w-16 h-4 bg-gray-300 rounded"></div>
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2 flex justify-center space-x-2">
+                      <div className="w-10 h-6 bg-gray-300 rounded"></div>
+                      <div className="w-10 h-6 bg-gray-300 rounded"></div>
+                    </td>
+                  </tr>
+                ))
+              : decks.map((deck) => (
+                  <tr key={deck.id} className="hover:bg-gray-100">
+                    <td className="border border-gray-300 px-4 py-2">{deck.name}</td>
+                    <td className="border border-gray-300 px-4 py-2">{deck.format}</td>
+                    <td className="border border-gray-300 px-4 py-2 flex justify-center space-x-2">
+                      <button className="px-3 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-700 transition" onClick={() => handleViewDeck(deck)}>
+                        👀 Ver
+                      </button>
+                      <button className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-700 transition" onClick={() => handleDelete(deck.id)}>
+                        🗑️ Eliminar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
           </tbody>
         </table>
       </div>
 
-      {/* Modal de Creación */}
-      {showModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-opacity-30 backdrop-blur-md">
-          <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg border border-gray-200">
-            <h2 className="text-2xl font-bold text-primary mb-4">Agregar Nuevo Mazo</h2>
-
-            <input
-              type="text"
-              className="border border-gray-300 rounded-lg px-4 py-2 w-full mb-3"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Nombre del mazo"
-            />
-
-            <select
-              className="border border-gray-300 rounded-lg px-4 py-2 w-full mb-3"
-              value={newFormat}
-              onChange={(e) => setNewFormat(e.target.value)}
-            >
-              <option value="Standard">Standard</option>
-              <option value="Expanded">Expanded</option>
-            </select>
-
-            <textarea
-              className="border border-gray-300 rounded-lg px-4 py-2 w-full h-32 mb-3"
-              value={newCardList}
-              onChange={(e) => setNewCardList(e.target.value)}
-              placeholder="Listado de cartas..."
-            />
-
-            <div className="flex space-x-2">
-              <button className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-700 transition w-full" onClick={handleCreate}>
-                ✅ Guardar
-              </button>
-
-              <button className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-700 transition w-full" onClick={() => setShowModal(false)}>
-                ❌ Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal de Vista de Mazo */}
-      {showViewModal && selectedDeck && (
-        <div className="fixed inset-0 flex items-center justify-center bg-opacity-30 backdrop-blur-md">
-          <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg border border-gray-200">
-            <h2 className="text-2xl font-bold text-primary mb-4">Mazo: {selectedDeck.name}</h2>
-            <h3 className="text-lg text-gray-700 mb-3">Formato: {selectedDeck.format}</h3>
-
-            {/* Área editable para la lista de cartas */}
-            <textarea
-              className="border border-gray-300 rounded-lg px-4 py-2 w-full h-32 text-sm text-left"
-              value={selectedDeck.cardList}
-              onChange={(e) => setSelectedDeck({ ...selectedDeck, cardList: e.target.value })}
-            />
-
-            <div className="flex space-x-2 mt-4">
-              <button className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-700 transition w-full" onClick={() => handleUpdateDeck(selectedDeck)}>
-                💾 Guardar Cambios
-              </button>
-              <button className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-700 transition w-full" onClick={() => setShowViewModal(false)}>
-                ❌ Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {showCreateModal && <CreateDeckModal onClose={() => setShowCreateModal(false)} onCreate={handleCreateDeck} />}
     </div>
   );
 };

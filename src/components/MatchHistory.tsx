@@ -26,33 +26,27 @@ const MatchHistory: React.FC<MatchHistoryProps> = ({ profileId, onBack }) => {
   const [decks, setDecks] = useState<Deck[]>([]);
   const [selectedDeck, setSelectedDeck] = useState<string>("all");
   const [showMatchManager, setShowMatchManager] = useState(false);
-  const [selectedDeckForMatch, setSelectedDeckForMatch] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchDecksAndMatches = async () => {
-      const deckData = await getDecks(profileId);
-      setDecks(deckData);
-  
-      let allMatches: Match[] = [];
-  
-      for (const deck of deckData) {
-        const deckMatches = await getMatches(profileId, deck.id);
-        const uniqueMatches = deckMatches.map(match => ({
-          ...match,
-          deckId: deck.id // 🔹 Asegurar que cada match tiene su deckId correcto
-        }));
-  
-        allMatches = [...allMatches, ...uniqueMatches];
-      }
-  
-      // 🔹 Eliminar duplicados usando un Set basado en IDs únicos
-      const filteredMatches = Array.from(new Map(allMatches.map(m => [m.id, m])).values());
-  
-      setMatches(filteredMatches);
-    };
-  
-    fetchDecksAndMatches();
+    fetchData();
   }, [profileId]);
+
+  const fetchData = async () => {
+    const deckData = await getDecks(profileId);
+    setDecks(deckData);
+
+    let allMatches: Match[] = [];
+    for (const deck of deckData) {
+      const deckMatches = await getMatches(profileId, deck.id);
+      allMatches = [...allMatches, ...deckMatches.map(match => ({ ...match, deckId: deck.id }))];
+    }
+    setMatches(allMatches);
+  };
+
+  const reloadMatches = () => {
+    fetchData(); // 🔄 Recargar la lista de enfrentamientos después de cerrar el modal
+    setShowMatchManager(false);
+  };
 
   const filteredMatches = selectedDeck === "all" ? matches : matches.filter(match => match.deckId === selectedDeck);
 
@@ -120,7 +114,12 @@ const MatchHistory: React.FC<MatchHistoryProps> = ({ profileId, onBack }) => {
       {/* Modal para agregar enfrentamiento */}
       {showMatchManager && (
         <div className="fixed inset-0 flex items-center justify-center bg-opacity-30 backdrop-blur-md">
-          <MatchManager profileId={profileId} deckId={selectedDeckForMatch || ""} onClose={() => setShowMatchManager(false)} />
+          <MatchManager
+            profileId={profileId}
+            deckId={selectedDeck === "all" ? "" : selectedDeck}
+            availableDecks={decks}
+            onClose={reloadMatches}
+          />
         </div>
       )}
     </div>
