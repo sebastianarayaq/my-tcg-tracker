@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { getDecks, createDeck, deleteDeck, updateDeck } from "../services/deckService";
-import CreateDeckModal from "./CreateDeckModal"; // ✅ Importar el modal de creación
+import CreateDeckModal from "./CreateDeckModal"; // ✅ Importar modal de creación
 
 interface Deck {
   id: string;
@@ -17,7 +17,7 @@ interface DeckManagerProps {
 
 const DeckManager: React.FC<DeckManagerProps> = ({ profileId, onBack }) => {
   const [decks, setDecks] = useState<Deck[]>([]);
-  const [loadingDecks, setLoadingDecks] = useState(true); // 🔹 Estado de carga de la tabla
+  const [loadingDecks, setLoadingDecks] = useState(true);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null);
@@ -26,10 +26,10 @@ const DeckManager: React.FC<DeckManagerProps> = ({ profileId, onBack }) => {
 
   useEffect(() => {
     const fetchDecks = async () => {
-      setLoadingDecks(true); // Activar skeleton
+      setLoadingDecks(true);
       const data = await getDecks(profileId);
       setDecks(data);
-      setLoadingDecks(false); // Desactivar skeleton cuando se carguen los datos
+      setLoadingDecks(false);
     };
     fetchDecks();
   }, [profileId]);
@@ -95,10 +95,10 @@ const DeckManager: React.FC<DeckManagerProps> = ({ profileId, onBack }) => {
     setLoadingImages(false);
   };
 
-  const handleUpdateDeck = async (deck: Deck) => {
-    if (!deck.id) return;
+  const handleUpdateDeck = async () => {
+    if (!selectedDeck) return;
 
-    await updateDeck(profileId, deck.id, { cardList: deck.cardList });
+    await updateDeck(profileId, selectedDeck.id, { cardList: selectedDeck.cardList });
     const updatedDecks = await getDecks(profileId);
     setDecks(updatedDecks);
     setShowViewModal(false);
@@ -131,12 +131,8 @@ const DeckManager: React.FC<DeckManagerProps> = ({ profileId, onBack }) => {
             {loadingDecks
               ? [...Array(4)].map((_, i) => (
                   <tr key={i} className="animate-pulse">
-                    <td className="border border-gray-300 px-4 py-2">
-                      <div className="w-24 h-4 bg-gray-300 rounded"></div>
-                    </td>
-                    <td className="border border-gray-300 px-4 py-2">
-                      <div className="w-16 h-4 bg-gray-300 rounded"></div>
-                    </td>
+                    <td className="border border-gray-300 px-4 py-2"><div className="w-24 h-4 bg-gray-300 rounded"></div></td>
+                    <td className="border border-gray-300 px-4 py-2"><div className="w-16 h-4 bg-gray-300 rounded"></div></td>
                     <td className="border border-gray-300 px-4 py-2 flex justify-center space-x-2">
                       <div className="w-10 h-6 bg-gray-300 rounded"></div>
                       <div className="w-10 h-6 bg-gray-300 rounded"></div>
@@ -162,6 +158,29 @@ const DeckManager: React.FC<DeckManagerProps> = ({ profileId, onBack }) => {
       </div>
 
       {showCreateModal && <CreateDeckModal onClose={() => setShowCreateModal(false)} onCreate={handleCreateDeck} />}
+
+      {showViewModal && selectedDeck && (
+        <div className="fixed inset-0 flex items-center justify-center bg-opacity-30 backdrop-blur-md">
+          <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg border border-gray-200">
+            <h2 className="text-2xl font-bold text-primary mb-4">Mazo: {selectedDeck.name}</h2>
+
+            <textarea className="w-full h-32 border border-gray-300 rounded-lg p-2" value={selectedDeck.cardList} onChange={(e) => setSelectedDeck({ ...selectedDeck, cardList: e.target.value })} />
+
+            <div className="overflow-x-auto whitespace-nowrap border-t pt-4 mt-2 flex space-x-2">
+              {loadingImages ? [...Array(5)].map((_, i) => <div key={i} className="w-24 h-32 bg-gray-300 rounded-md"></div>) : cardImages.map((img, i) => <img key={i} src={img} className="w-24 h-32 rounded-md shadow-md" />)}
+            </div>
+
+            <div className="flex space-x-2 mt-4">
+              <button className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-700 transition w-full" onClick={handleUpdateDeck}>
+                💾 Guardar Cambios
+              </button>
+              <button className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-700 transition w-full" onClick={() => setShowViewModal(false)}>
+                ❌ Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

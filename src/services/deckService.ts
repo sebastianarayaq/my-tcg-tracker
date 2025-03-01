@@ -1,5 +1,5 @@
 import { db } from "../firebase";
-import { collection, addDoc, getDocs, doc, deleteDoc, updateDoc } from "firebase/firestore";
+import { collection, addDoc, getDocs, doc, deleteDoc, updateDoc} from "firebase/firestore";
 
 interface Deck {
     id?: string;
@@ -38,5 +38,24 @@ export const updateDeck = async (profileId: string, deckId: string, updatedField
 
 // Eliminar un mazo
 export const deleteDeck = async (profileId: string, deckId: string) => {
-  await deleteDoc(doc(db, "profiles", profileId, "mazos", deckId));
+  try {
+    const decksCollection = collection(db, "decks");
+    const deckDoc = doc(decksCollection, deckId);
+    const matchesCollection = collection(deckDoc, "matches");
+
+    // Obtener y eliminar todos los enfrentamientos asociados al mazo
+    const matchesSnapshot = await getDocs(matchesCollection);
+    const deleteMatchPromises = matchesSnapshot.docs.map((matchDoc) =>
+      deleteDoc(doc(matchesCollection, matchDoc.id))
+    );
+
+    await Promise.all(deleteMatchPromises); // Esperar la eliminación de los enfrentamientos
+
+    // Eliminar el mazo de la colección `mazos`
+    await deleteDoc(doc(db, "profiles", profileId, "mazos", deckId));
+
+    console.log(`Mazo ${deckId} y sus enfrentamientos han sido eliminados.`);
+  } catch (error) {
+    console.error("Error eliminando el mazo y sus enfrentamientos:", error);
+  }
 };
